@@ -316,11 +316,33 @@ siege 수행 결과 : Availability가 100%로 무정지 재배포 수행 확인�
 
 
 
-
+####################### seige 설치 ##########################
 seige 설치
 apt-get update -y
 apt-get install -y siege
+##############################################################
 
+################# Metrict Server 설치 ################################
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.3.6/components.yaml
+kubectl get deployment metrics-server -n kube-system
+########################################################################
+
+
+################################### 자원 limit 설정 ###################################
+pwd 로 현 위치가 /container-orchestration/yaml_aws/ 인지 확인
+(모든 객체 지우기)
+kubectl delete deploy,service,pod --all
+(대상 서비스 배포 및 모니터링)
+kubectl apply -f https://k8s.io/examples/application/php-apache.yaml
+(오토 스케일링 설정, hpa: HorizontalPodAutoscaler )
+kubectl autoscale deployment php-apache --cpu-percent=20 --min=1 --max=10
+kubectl get hpa php-apache -o yaml
+로드 제너레이터(siege)가 설치된 컨테이너 생성 
+cat siege.yaml
+kubectl create -f siege.yaml
+로드 생성
+siege -c30 -t30S -v http://php-apache
+######################################################################################
 
 오토스케일 아웃 --------------------------------------------------------------------------------------------------------------------
 
