@@ -1,0 +1,371 @@
+- IAM > 사용자 > 보안자격증명 > 액세스 키 만들기
+
+
+ACCESS_KEY
+.........
+SECRET KEY
+.........
+
+
+- 리눅스에서 aws 자격증명 입력
+$ aws configure
+> Access Key ID와 Secret Access key 입력
+> region 정보에 us-east-2 입력
+> default output format에 json 입력
+
+cf) region 변경
+$ aws configure set region us-east-2
+
+
+- AWS 클러스터 생성
+$ eksctl create cluster --name team5-Cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 2 --nodes-min 1 --nodes-max 3
+
+cf) 클러스터 삭제
+eksctl delete cluster --name team5-Cluster
+
+
+- Local에 EKS 클러스터 접속정보 설정
+$ aws eks --region us-east-2 update-kubeconfig --name team5-Cluster
+kubectl config current-context
+kubectl get all
+
+
+
+이미지 생성 & Push (서비스 개수만큼 반복) --------------------------------------------------------------------------------------------------------------------
+각각의 micro service 폴더(경로)에 들어가서 빌드 & Docker 이미지 생성 (ex. order라는 microservice라고 할 때)
+
+############### 소스 git에 업로드 ###############
+git init
+git remote add origin https://github.com/mygithub/order.git
+git add .
+(git status) 	// 상태 확인
+git commit -m 'first commit'		// local git에 커밋
+git push -u origin master			// remote repository에 push
+#############################################
+
+############### 소스 다운로드 ###############
+git clone https://github.com/mygithub/order.git		// 로컬에 git repository 생성 및 소스 다운
+cd order
+ls -al
+rm -rf ./target
+#############################################
+
+
+-- AWS Console > ECR > Repository 생성
+
+
+- Local에 ECR(Elastic Container Registry) 인증 및 토큰 설정
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 496278789073.dkr.ecr.us-east-2.amazonaws.com
+
+cf) 오류(unknown flag: --password-stdin) 발생 시,
+	docker login --username AWS -p $(aws ecr get-login-password --region us-east-2) 496278789073.dkr.ecr.us-east-2.amazonaws.com
+
+
+################## 이미지 생성 및 push ###########################
+mvn package		// 메이븐 빌드
+(Docker 데몬 실행 중인지 확인, 실행 안되고 있으면 실행 시킨 후)
+docker images
+
+- docker 이미지 생성
+docker build -t 496278789073.dkr.ecr.us-east-2.amazonaws.com/t5_gateway:v1 .		// docker 이미지 생성
+docker images		// 확인, 리스트에 496278789073.dkr.ecr.us-east-2.amazonaws.com/t5_gateway v1 이 있어야 함
+
+
+- docker 이미지 ECR에 push
+docker push 496278789073.dkr.ecr.us-east-2.amazonaws.com/t5_gateway:v1
+##############################################################
+
+cf) docker 이미지 삭제
+docker image rm hello-world
+docker image rm $(docker images -q) # 한번에 모든 도커 이미지 지우기
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+마이크로서비스 deploy (서비스 개수만큼 반복) ----------------------------------------------------------------------------------------------------
+export ECR=[AWS_ACCOUNT_ID].dkr.ecr.us-east-2.amazonaws.com		// 496278789073.dkr.ecr.us-east-2.amazonaws.com
+export IMAGENAME=order
+
+kubectl create deploy ${IMAGENAME} --image=${ECR}/${IMAGENAME}:latest
+kubectl expose deploy ${IMAGENAME} --type="ClusterIP" --port=8080
+
+ex) order 마이크로 서비스인 경우
+kubectl create deploy order --image=496278789073.dkr.ecr.us-east-2.amazonaws.com/order:latest
+kubectl expose deploy order --type="ClusterIP" --port=8080
+--------------------------------------------------------------------------------------------------------------------
+
+
+gateway deploy ------------------------------------------------------------------------------------------------------
+kubectl create deploy gateway --image=496278789073.dkr.ecr.us-east-2.amazonaws.com/t5_gateway:latest
+kubectl expose deploy gateway --type="LoadBalancer" --port=8080
+--------------------------------------------------------------------------------------------------------------------
+
+
+cf) 생성된 Pod, 및 오브젝트 삭제
+kubectl delete pod [pod명]
+kubectl delete service,deploy --all
+
+카프카 (Local)---------------------------------------------------------------------------------------------------------
+새 CMD 창에서 주키퍼 실행 - kafka 설치 경로로 이동 : cd kafka_2.13-2.5.0/bin/windows
+zookeeper-server-start.bat ../../config/zookeeper.properties
+
+새 CMD 창에서 카프카 실행 - kafka 설치 경로로 이동 : cd kafka_2.13-2.5.0/bin/windows
+kafka-server-start.bat ../../config/server.properties
+
+새 CMD 창에서 카프카 Topic 생성 - kafka 설치 경로로 이동 : cd kafka_2.13-2.5.0/bin/windows
+kafka-console-consumer --bootstrap-server localhost:9092 --topic ipTVShopProject --from-beginning
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+########################## 카프카 설치 ##########################
+[ Kafka ]
+kubectl get all : service/kubernetes   하나만 나오는 상태에서 kafka 설치
+- zookeeper, kafka 설치 : helm version -> 설치가 안되어 있거나, 버전이 2.xx  일때
+curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get | bash
+kubectl --namespace kube-system create sa tiller      # helm 의 설치관리자를 위한 시스템 사용자 생성
+kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+
+helm init --service-account tiller
+kubectl patch deploy --namespace kube-system tiller-deploy -p '{"spec":{"template":{"spec":{"serviceAccount":"tiller"}}}}'
+helm repo add incubator http://storage.googleapis.com/kubernetes-charts-incubator
+helm repo update
+helm install --name my-kafka --namespace kafka incubator/kafka
+--> 생성 확인 : zookeeper 3, kafka 3 개 pod 생성 확인
+kubectl get pod -n kafka 
+
+삭제
+helm del --purge my-kafka
+#################################################################
+
+
+
+
+카프카(Cloud) --------------------------------------------------------------------------------------------------------------------
+주키퍼 실행
+bin/zookeeper-server-start.sh config/zookeeper.properties 1>/dev/null 2>&1 &
+
+카프카 실행
+bin/kafka-server-start.sh config/server.properties 1>/dev/null 2>&1 &
+
+
+카프카 topic 리스닝 
+kubectl -n kafka exec -ti my-kafka-0 -- /usr/bin/kafka-console-consumer --bootstrap-server my-kafka:9092 --topic order --from-beginning
+
+
+프로세스 확인 
+ps -ef | grep kafka
+ps -ef | grep zookeeper
+
+
+eventTopic 이라는 토픽 생성
+bin/kafka-topics.sh --zookeeper localhost:2181 --topic eventTopic --create --partitions 1 --replication-factor 1
+
+생성된 토픽 확인
+bin/kafka-topics.sh --zookeeper localhost:2181 --list
+
+이벤트 수신하기
+탭을 하나 더 열기
+cd kafka_2.11-2.4.0
+bin/kafka-console-consumer.sh --bootstrap-server http://localhost:9092 --topic eventTopic --from-beginning
+
+이벤트 발행하기
+bin/kafka-console-producer.sh --broker-list http://localhost:9092 --topic eventTopic
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+CQRS--------------------------------------------------------------------------------------------------------------------
+아무 서비스나 하나만 DB dependency 변경
+
+CQRS 를 위한 Mypage 서비스만 DB를 구분하여 적용함. 인메모리 DB인 hsqldb 사용.
+
+		<!--
+                <dependency>
+                    <groupId>com.h2database</groupId>
+                    <artifactId>h2</artifactId>
+                    <scope>runtime</scope>
+                </dependency>
+         -->
+                <dependency>
+                    <groupId>org.hsqldb</groupId>
+                    <artifactId>hsqldb</artifactId>
+                    <version>2.4.0</version>
+                    <scope>runtime</scope>
+                </dependency>
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+CI/CD --------------------------------------------------------------------------------------------------------------------
+교재 173 ~ 179 참고
+
+﻿buildspec.yml 수정
+
+1. ECR Repository 생성 : 이미지 이름과 동일하게
+
+2. cache 적용
+  - S3 버킷 생성
+  - CodeBuild 캐시 설정 : CodeBuild > 프로젝트 빌드 > 빌드 선택 > 빌드 세부정보 > 아티펙트:편집 > 추가 구성 > 캐시유형/버킷 선택
+
+3. EKS 클러스터 생성 (이미 생성 되었으면 생략 가능)
+eksctl create cluster --name awsteamd-cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 3 --nodes-min 3 --nodes-max 5
+
+4. EKS 연결
+- sa 생성
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eks-admin
+  namespace: kube-system
+EOF
+
+- 롤 바인딩
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: eks-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: eks-admin
+  namespace: kube-system
+EOF
+
+- 만들어진 eks-admin SA 의 토큰 가져오기
+kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep eks-admin | awk '{print $1}')
+-> 환경변수 KUBE_TOKEN
+
+5. CodeBuild 프로젝트 생성(p.174~175) 및 환경 변수 추가(p.179)
+  - AWS_ACCOUNT_ID : 
+  - KUBE_URL : k8s URL 
+  - KUBE_TOKEN : 
+
+
+6. CodeBuild와 ECR 연결(p.177)
+{
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:GetAuthorizationToken",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": "*",
+      "Effect": "Allow"
+}
+
+7. Docker Build/Push
+- buildspec.yml 수정 & CodeBuild 빌드
+- ECR에 이미지 정상 생성 확인
+- EKS 연결 service, deployment 생성
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+무정지 재배포 --------------------------------------------------------------------------------------------------------------------
+
+먼저 무정지 재배포가 100% 되는 것인지 확인하기 위해서 Autoscaler 이나 CB 설정을 제거함
+siege 로 배포작업 직전에 워크로드를 모니터링 한다.
+siege -c30 -t150S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+readinessProbe, livenessProbe 설정되지 않은 상태로 buildspec.yml을 수정한다.
+
+Github에 buildspec.yml 수정 발생으로 CodeBuild 자동 빌드/배포 수행된다.
+
+siege 수행 결과 : Availability가 100% 미만으로 떨어짐(79.06%) -> 컨테이너 배포는 되었지만 ready 되지 않은 상태에서 호출 유입됨 image
+
+readinessProbe, livenessProbe 설정하고 buildspec.yml을 수정한다.
+아래와 같은 내용을 찾아서 주석 처리
+readinessProbe:
+                      httpGet:
+                        path: /actuator/health
+                        port: 8080
+                      initialDelaySeconds: 10
+                      timeoutSeconds: 2
+                      periodSeconds: 5
+                      failureThreshold: 10
+                    livenessProbe:
+                      httpGet:
+                        path: /actuator/health
+                        port: 8080
+                      initialDelaySeconds: 120
+                      timeoutSeconds: 2
+                      periodSeconds: 5
+                      failureThreshold: 5    
+
+Github에 buildspec.yml 수정 발생으로 CodeBuild 자동 빌드/배포 수행된다.
+
+siege 수행 결과 : Availability가 100%로 무정지 재배포 수행 확인할 수 있다.
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+오토스케일 아웃 --------------------------------------------------------------------------------------------------------------------
+
+가입신청 서비스에 대한 replica 를 동적으로 늘려주도록 HPA 를 설정한다. 설정은 CPU 사용량이 1프로를 넘어서면 replica 를 10개까지 늘려준다.
+kubectl autoscale deploy order --min=1 --max=10 --cpu-percent=1
+
+
+오토스케일이 어떻게 되고 있는지 모니터링을 걸어준다.
+kubectl get deploy order -w
+
+kubectl get hpa order -w
+
+
+사용자 50명으로 워크로드를 3분 동안 걸어준다.
+siege -c50 -t180S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+
+ConfigMap 적용 --------------------------------------------------------------------------------------------------------------------
+설정의 외부 주입을 통한 유연성을 제공하기 위해 ConfigMap을 적용한다.
+orderstatus 에서 사용하는 mySQL(AWS RDS 활용) 접속 정보를 ConfigMap을 통해 주입 받는다.
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iptv
+data:
+  urlstatus: "jdbc:mysql://iptv.cgzkudckye4b.us-east-2.rds.amazonaws.com:3306/orderstatus?serverTimezone=UTC&useUnicode=true&characterEncoding=utf8"
+EOF
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+
+Secret 적용 --------------------------------------------------------------------------------------------------------------------
+username, password와 같은 민감한 정보는 ConfigMap이 아닌 Secret을 적용한다.
+etcd에 암호화 되어 저장되어, ConfigMap 보다 안전하다.
+value는 base64 인코딩 된 값으로 지정한다. (echo root | base64)
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: iptv
+type: Opaque
+data:
+  username: xxxxx <- 보안 상, 임의의 값으로 표시함 
+  password: xxxxx <- 보안 상, 임의의 값으로 표시함
+EOF
+--------------------------------------------------------------------------------------------------------------------
