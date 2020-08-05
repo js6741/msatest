@@ -297,12 +297,25 @@ kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | gre
 
 무정지 재배포 --------------------------------------------------------------------------------------------------------------------
 
+
+siege -c30 -t150S --content-type "application/json" 'http://t5-admin:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+
+
 먼저 무정지 재배포가 100% 되는 것인지 확인하기 위해서 Autoscaler 이나 CB 설정을 제거함
 siege 로 배포작업 직전에 워크로드를 모니터링 한다.
-siege -c30 -t150S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+
+
+siege로 모니터링
+siege -c1 -t300s -v http GET http://t5-admin:8080/menus
+pod 모니터링
+kubectl get po -w
+
+
 readinessProbe, livenessProbe 설정되지 않은 상태로 buildspec.yml을 수정한다.
 
 Github에 buildspec.yml 수정 발생으로 CodeBuild 자동 빌드/배포 수행된다.
+
+
 
 siege 수행 결과 : Availability가 100% 미만으로 떨어짐(79.06%) -> 컨테이너 배포는 되었지만 ready 되지 않은 상태에서 호출 유입됨 image
 
