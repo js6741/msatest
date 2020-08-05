@@ -34,21 +34,21 @@ kubectl get all
 이미지 생성 & Push (서비스 개수만큼 반복) --------------------------------------------------------------------------------------------------------------------
 각각의 micro service 폴더(경로)에 들어가서 빌드 & Docker 이미지 생성 (ex. order라는 microservice라고 할 때)
 
-############### 소스 git에 업로드 ###############
+############### 소스 git에 업로드 (CMD창에서) ################
 git init
 git remote add origin https://github.com/mygithub/order.git
 git add .
 (git status) 	// 상태 확인
 git commit -m 'first commit'		// local git에 커밋
 git push -u origin master			// remote repository에 push
-#############################################
+#########################################################
 
-############### 소스 다운로드 ###############
+############### 소스 다운로드 (리눅스에서) ###################
 git clone https://github.com/mygithub/order.git		// 로컬에 git repository 생성 및 소스 다운
 cd order
 ls -al
 rm -rf ./target
-#############################################
+#########################################################
 
 
 -- AWS Console > ECR > Repository 생성
@@ -114,7 +114,7 @@ zookeeper-server-start.bat ../../config/zookeeper.properties
 새 CMD 창에서 카프카 실행 - kafka 설치 경로로 이동 : cd kafka_2.13-2.5.0/bin/windows
 kafka-server-start.bat ../../config/server.properties
 
-새 CMD 창에서 카프카 Topic 생성 - kafka 설치 경로로 이동 : cd kafka_2.13-2.5.0/bin/windows
+새 CMD 창에서 카프카 Topic 생성 - kafka 설치 경로로 이동 : cd kafka_2.13-2.5.0/bin/windows // topic명 = 소스코드 package명
 kafka-console-consumer --bootstrap-server localhost:9092 --topic ipTVShopProject --from-beginning
 --------------------------------------------------------------------------------------------------------------------
 
@@ -135,8 +135,8 @@ kubectl patch deploy --namespace kube-system tiller-deploy -p '{"spec":{"templat
 helm repo add incubator http://storage.googleapis.com/kubernetes-charts-incubator
 helm repo update
 helm install --name my-kafka --namespace kafka incubator/kafka
---> 생성 확인 : zookeeper 3, kafka 3 개 pod 생성 확인
-kubectl get pod -n kafka 
+
+kubectl get pod -n kafka 		// --> 생성 확인 : zookeeper 3, kafka 3 개 pod 생성 확인
 
 삭제
 helm del --purge my-kafka
@@ -176,6 +176,24 @@ bin/kafka-console-consumer.sh --bootstrap-server http://localhost:9092 --topic e
 이벤트 발행하기
 bin/kafka-console-producer.sh --broker-list http://localhost:9092 --topic eventTopic
 --------------------------------------------------------------------------------------------------------------------
+
+
+
+
+[ Kafka ]
+- 토픽 생성
+kubectl -n kafka exec my-kafka-0 -- /usr/bin/kafka-topics --zookeeper my-kafka-zookeeper:2181 --topic ipTVShopProject --create --partitions 1 --replication-factor 1
+- 토픽 조회
+kubectl -n kafka exec my-kafka-0 -- /usr/bin/kafka-topics --zookeeper my-kafka-zookeeper:2181 --list
+- 토픽 삭제
+kubectl -n kafka exec my-kafka-0 -- /usr/bin/kafka-topics --delete --zookeeper my-kafka-zookeeper:2181 --topic ipTVShopProject
+- 이벤트 발행
+kubectl -n kafka exec -ti my-kafka-0 -- /usr/bin/kafka-console-producer --broker-list my-kafka:9092 --topic ipTVShopProject
+- 이벤트 수신
+kubectl -n kafka exec -ti my-kafka-0 -- /usr/bin/kafka-console-consumer --bootstrap-server my-kafka:9092 --topic ipTVShopProject --from-beginning
+kubectl -n kafka exec -ti my-kafka-1 -- /usr/bin/kafka-console-consumer --bootstrap-server my-kafka:9092 --topic ipTVShopProject
+
+
 
 
 
@@ -316,6 +334,7 @@ siege 수행 결과 : Availability가 100%로 무정지 재배포 수행 확인�
 
 
 
+
 ####################### seige 설치 ##########################
 seige 설치
 kubectl apply -f - <<EOF
@@ -354,27 +373,80 @@ siege -c30 -t30S -v http://php-apache
 ######################################################################################
 
 
-kubectl exec -it siege --container siege -n istio-cb-ns -- /bin/bash
+
+
+
+################################ 부하 발생 ##############################################
+workflowy에서 검색해서 나오는 코드로 먼저 해보고 ---------------
+로드 제너레이터(siege)가 설치된 컨테이너 생성 
+cat siege.yaml
+kubectl create -f siege.yaml
 kubectl exec -it siege -- /bin/bash
+로드 생성
+siege -c30 -t30S -v http://php-apache
+
+안되면 이 아래 코드 참고해볼 것..------------------------------------------------------------
+
+
+- siege 실행
+kubectl exec -it siege -- /bin/bash
+istio-cb 참고) kubectl exec -it siege --container siege -n istio-cb-ns -- /bin/bash
+
+- 부하발생
+siege -c2 -t10S -v --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+siege -c30 -t150S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+
+######################################################################################
+
+
+
+
+[ mysql ]
+iptv.cgzkudckye4b.us-east-2.rds.amazonaws.com
+
+
+
+
+######################################################################################
 
 
 오토스케일 아웃 --------------------------------------------------------------------------------------------------------------------
+https://gruuuuu.github.io/cloud/monitoring-01hpa/#
+
+- t5-admin yaml 파일 수정
+kubectl get deploy t5-admin -o yaml
+resources에 자원  limit 설정 추가
+----------------
+        resources:
+          limits:
+            cpu: 500m
+          requests:
+            cpu: 200m
+----------------
+deployment.yaml 파일 적용
+
+
+오토스케일이 어떻게 되고 있는지 모니터링을 걸어준다.
+kubectl get deploy order -w
+kubectl get hpa order -w
 
 가입신청 서비스에 대한 replica 를 동적으로 늘려주도록 HPA 를 설정한다. 설정은 CPU 사용량이 1프로를 넘어서면 replica 를 10개까지 늘려준다.
 kubectl autoscale deploy order --min=1 --max=10 --cpu-percent=1
 
 
-오토스케일이 어떻게 되고 있는지 모니터링을 걸어준다.
-kubectl get deploy order -w
 
-kubectl get hpa order -w
 
+- siege 실행
+kubectl exec -it siege -- /bin/bash
 
 사용자 50명으로 워크로드를 3분 동안 걸어준다.
 siege -c50 -t180S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
 
 --------------------------------------------------------------------------------------------------------------------
 
+Circuit breaker (써킷브레이커)
+hystrix 방식 아래참고
+https://github.com/SK-teamC/order
 
 
 
@@ -409,19 +481,3 @@ data:
   password: xxxxx <- 보안 상, 임의의 값으로 표시함
 EOF
 --------------------------------------------------------------------------------------------------------------------
-
-
-
-	<!--
-                <dependency>
-                    <groupId>com.h2database</groupId>
-                    <artifactId>h2</artifactId>
-                    <scope>runtime</scope>
-                </dependency>
-         -->
-                <dependency>
-                    <groupId>org.hsqldb</groupId>
-                    <artifactId>hsqldb</artifactId>
-                    <version>2.4.0</version>
-                    <scope>runtime</scope>
-                </dependency>
