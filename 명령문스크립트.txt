@@ -1,0 +1,53 @@
+book
+ground
+status
+schedule
+gateway
+
+
+git remote add origin https://github.com/js6741/mground.git
+
+zookeeper-server-start.bat ../../config/zookeeper.properties
+kafka-server-start.bat ../../config/server.properties
+kafka-console-consumer --bootstrap-server localhost:9092 --topic playground --from-beginning
+
+http POST http://localhost:8088/grounds groundName=sc1 groundType=soccer maxPlayer=30
+http POST http://localhost:8088/grounds groundName=tennis1 groundType=tennis maxPlayer=6
+http POST http://localhost:8088/grounds groundName=basketball1 groundType=basketball maxPlayer=15
+
+http POST http://localhost:8088/schedules groundName=basketball1 groundType=basketball maxPlayer=15
+
+
+http POST http://localhost:8088/grounds groundName=gateball1 groundType=gateball maxPlayer=10
+
+http GET http://localhost:8088/grounds
+http GET http://localhost:8088/schedules
+http GET http://localhost:8088/statuses
+
+
+/installations?orderId=1
+
+http POST http://localhost:8088/books userName=Tom date=20200801 groundId=1 status=Booked
+http POST http://localhost:8088/books userName=Jerry date=20200801 groundId=3 status=Booked
+
+http GET http://localhost:8088/books
+http GET http://localhost:8088/schedules
+http GET http://localhost:8088/statuses
+
+http PATCH http://localhost:8088/books/cancel?groundId=1 -- 예약취소
+http PATCH http://localhost:8088/schedules
+http GET http://localhost:8088/schedules
+http GET http://localhost:8088/statuses
+
+
+REQ/RES
+http PATCH http://localhost:8088/grounds/1
+
+
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+curl --location "https://github.com/weaveworks/eksctl/releases/download/latest_release/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+
+
+eksctl create cluster --name user12-Cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 2 --nodes-min 1 --nodes-max 3
+
