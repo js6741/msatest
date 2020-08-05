@@ -14,22 +14,22 @@ SECRET KEY
 - 리눅스에서 aws 자격증명 입력
 $ aws configure
 > Access Key ID와 Secret Access key 입력
-> region 정보에 us-east-2 입력
+> region 정보에 ap-southeast-1 입력
 > default output format에 json 입력
 
 cf) region 변경
-$ aws configure set region us-east-2
+$ aws configure set region ap-southeast-1
 
 
 - AWS 클러스터 생성
-$ eksctl create cluster --name team5-Cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 2 --nodes-min 1 --nodes-max 3
+$ eksctl create cluster --name user12-Cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 2 --nodes-min 1 --nodes-max 3
 
 cf) 클러스터 삭제
-eksctl delete cluster --name team5-Cluster
+eksctl delete cluster --name user12-Cluster
 
 
 - Local에 EKS 클러스터 접속정보 설정
-$ aws eks --region us-east-2 update-kubeconfig --name team5-Cluster
+$ aws eks --region ap-southeast-1 update-kubeconfig --name user12-Cluster
 kubectl config current-context
 kubectl get all
 
