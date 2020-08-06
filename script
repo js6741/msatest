@@ -1,9 +1,5 @@
 - IAM > 사용자 > 보안자격증명 > 액세스 키 만들기
 
-https://kcloud-academy.signin.aws.amazon.com/console
-skccuser12
-
-region ap-southeast-1
 
 ACCESS_KEY
 .........
@@ -14,22 +10,22 @@ SECRET KEY
 - 리눅스에서 aws 자격증명 입력
 $ aws configure
 > Access Key ID와 Secret Access key 입력
-> region 정보에 ap-southeast-1 입력
+> region 정보에 us-east-2 입력
 > default output format에 json 입력
 
 cf) region 변경
-$ aws configure set region ap-southeast-1
+$ aws configure set region us-east-2
 
 
 - AWS 클러스터 생성
-$ eksctl create cluster --name user12-Cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 2 --nodes-min 1 --nodes-max 3
+$ eksctl create cluster --name team5-Cluster --version 1.15 --nodegroup-name standard-workers --node-type t3.medium --nodes 2 --nodes-min 1 --nodes-max 3
 
 cf) 클러스터 삭제
-eksctl delete cluster --name user12-Cluster
+eksctl delete cluster --name team5-Cluster
 
 
 - Local에 EKS 클러스터 접속정보 설정
-$ aws eks --region ap-southeast-1 update-kubeconfig --name user12-Cluster
+$ aws eks --region us-east-2 update-kubeconfig --name team5-Cluster
 kubectl config current-context
 kubectl get all
 
@@ -347,7 +343,51 @@ Github에 buildspec.yml 수정 발생으로 CodeBuild 자동 빌드/배포 수�
 siege 수행 결과 : Availability가 100%로 무정지 재배포 수행 확인할 수 있다.
 --------------------------------------------------------------------------------------------------------------------
 
+오토스케일 아웃 --------------------------------------------------------------------------------------------------------------------
+https://gruuuuu.github.io/cloud/monitoring-01hpa/#
 
+- t5-admin yaml 파일 수정
+kubectl get deploy t5-admin -o yaml
+resources에 자원  limit 설정 추가
+----------------
+        resources:
+          limits:
+            cpu: 500m
+          requests:
+            cpu: 200m
+----------------
+deployment.yaml 파일 적용
+
+cat <<EOF | kubectl apply -f -
+...... 
+EOF
+
+
+오토스케일이 어떻게 되고 있는지 모니터링을 걸어준다.
+kubectl get deploy order -w
+kubectl get hpa order -w
+
+가입신청 서비스에 대한 replica 를 동적으로 늘려주도록 HPA 를 설정한다. 설정은 CPU 사용량이 1프로를 넘어서면 replica 를 10개까지 늘려준다.
+kubectl autoscale deploy order --min=1 --max=10 --cpu-percent=1
+
+
+[ HPA 오토스케일링 ]
+kubectl autoscale deploy ground --min=1 --max=10 --cpu-percent=5
+kubectl get deploy order -w
+kubectl get hpa -w
+kubectl delete hpa order 
+
+
+- siege 실행
+kubectl exec -it siege -- /bin/bash
+
+- 부하발생
+siege -c150 -t300s -v http GET http://ground:8080/grounds
+
+사용자 50명으로 워크로드를 3분 동안 걸어준다.
+siege -c50 -t180S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
+
+--------------------------------------------------------------------------------------------------------------------
 
 
 
@@ -427,39 +467,7 @@ iptv.cgzkudckye4b.us-east-2.rds.amazonaws.com
 ######################################################################################
 
 
-오토스케일 아웃 --------------------------------------------------------------------------------------------------------------------
-https://gruuuuu.github.io/cloud/monitoring-01hpa/#
 
-- t5-admin yaml 파일 수정
-kubectl get deploy t5-admin -o yaml
-resources에 자원  limit 설정 추가
-----------------
-        resources:
-          limits:
-            cpu: 500m
-          requests:
-            cpu: 200m
-----------------
-deployment.yaml 파일 적용
-
-
-오토스케일이 어떻게 되고 있는지 모니터링을 걸어준다.
-kubectl get deploy order -w
-kubectl get hpa order -w
-
-가입신청 서비스에 대한 replica 를 동적으로 늘려주도록 HPA 를 설정한다. 설정은 CPU 사용량이 1프로를 넘어서면 replica 를 10개까지 늘려준다.
-kubectl autoscale deploy order --min=1 --max=10 --cpu-percent=1
-
-
-
-
-- siege 실행
-kubectl exec -it siege -- /bin/bash
-
-사용자 50명으로 워크로드를 3분 동안 걸어준다.
-siege -c50 -t180S --content-type "application/json" 'http://a518c6481215d478b8b769aa034cdff4-46291629.us-east-2.elb.amazonaws.com:8080/orders POST {"productId": "2001", "productName": "internet", "installationAddress": "Seoul", "customerId": "1", "orderDate": "20200715", "status": "JOINORDED"}'
-
---------------------------------------------------------------------------------------------------------------------
 
 Circuit breaker (써킷브레이커)
 hystrix 방식 아래참고
